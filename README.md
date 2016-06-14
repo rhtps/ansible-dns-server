@@ -17,3 +17,8 @@ License
 -------
 
 Apache 2.0
+
+Authors
+-------
+
+Credit where credit is due, thanks to bertvv for his work on the ansible-role-bind @ https://github.com/bertvv/ansible-role-bind.
