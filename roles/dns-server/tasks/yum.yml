@@ -1,0 +1,150 @@
+---
+- name: Copy partition script
+  copy:
+    src: partition.sh
+    dest: /tmp/partition.sh
+    owner: root
+    mode: 0700
+
+- name: Execute the partition script
+  command: /tmp/partition.sh
+
+- name: Format EBS volume
+  filesystem:
+    fstype: xfs
+    dev: /dev/xvdb1
+
+- name: Make the yum html directory
+  file:
+    path: "/var/www/html"
+    state: directory
+    mode: 0755
+    recurse: yes
+
+- name: Mount the volume
+  mount:
+    name: "/var/www/html"
+    src: /dev/xvdb1
+    fstype: xfs
+    state: mounted
+
+- name: Make the repo directories
+  file:
+    path: "/var/www/html/{{ item }}"
+    state: directory
+    mode: 0755
+  with_items:
+    - "rhel-7-server-rpms"
+    - "rhel-7-server-extras-rpms"
+    - "rhel-7-server-ose-3.2-rpms"
+
+- name: Get rid of RHUI repo files
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - "/etc/yum.repos.d/redhat-rhui.repo"
+    - "/etc/yum.repos.d/redhat-rhui-client-config.repo"
+    - "/etc/yum.repos.d/rhui-load-balancers.repo"
+
+- name: Subscribe to RHN
+  redhat_subscription:
+    state: present
+    username: "{{ rhn_username }}"
+    password: "{{ rhn_password }}"
+    autosubscribe: true
+
+# Currently no support for repo manipulation in redhat_subscription
+- name: Disable all repos
+  command: subscription-manager repos --disable="*"
+
+- name: Enable OpenShift repos
+  command: subscription-manager repos --enable="{{ item }}"
+  with_items:
+    - "rhel-7-server-rpms"
+    - "rhel-7-server-extras-rpms"
+    - "rhel-7-server-ose-3.2-rpms"
+
+- name: Install EPEL rpm
+  yum:
+    name: https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+    state: present
+
+- name: Install httpd
+  yum:
+    name: httpd
+    state: present
+
+- name: Start and enable httpd
+  service:
+    name: httpd
+    state: started
+    enabled: yes
+
+- name: Restore SELinux context
+  command: restorecon -R /var/www/html
+
+# We'll give this 30 minutes to complete, checking every minute
+- name: Sync OpenShift repos
+  command: reposync -n -r "{{ item }}" -p "/var/www/html/"
+  with_items:
+    - "rhel-7-server-rpms"
+    - "rhel-7-server-extras-rpms"
+    - "rhel-7-server-ose-3.2-rpms"
+    - "epel"
+  async: 1800
+  poll: 60
+
+- name: Install createrepo
+  yum:
+    name: createrepo
+    state: present
+
+- name: Set up local yum OSE repos
+  command: createrepo --database "/var/www/html/{{ item }}/Packages"
+  with_items:
+    - "rhel-7-server-rpms"
+    - "rhel-7-server-extras-rpms"
+    - "rhel-7-server-ose-3.2-rpms"
+
+# We do this one separately since there's no Packages directory
+- name: Set up local yum EPEL repo
+  command: createrepo --database "/var/www/html/epel"
+
+- name: Tar up OSE repos
+  command: "tar czf ose32.tar.gz rhel-7-server-extras-rpms rhel-7-server-ose-3.2-rpms rhel-7-server-rpms"
+  args:
+    chdir: /var/www/html
+
+- name: Tar up EPEL repos
+  command: "tar czf epel.tar.gz epel"
+  args:
+    chdir: /var/www/html
+
+### Optional CentOS mirroring
+- name: copy CentOS base yum repo file
+  copy:
+    src: CentOS-Base.repo
+    dest: /etc/yum.repos.d/CentOS-Base.repo
+    owner: root
+    mode: 0644
+
+- name: make CentOS directories
+  file:
+    name: /var/www/html/centos
+    state: directory
+    recurse: yes
+
+- name: sync CentOS repos
+  command: reposync -n -r "{{ item }}" -p "/var/www/html/"
+  with_items:
+    - "base"
+    - "extras"
+    - "updates"
+  async: 1800
+  poll: 60
+
+- name: tar up CentOS repos
+  command: "tar cvzf centos7.tar.gz base extras updates"
+  args:
+    chdir: /var/www/html

@@ -1,0 +1,43 @@
+---
+- name: Install TigerVNC
+  yum:
+    name: tigervnc-server
+    state: present
+
+# Could take up to 20 minutes
+- name: Install the 'Gnome desktop' environment group
+  yum:
+    name: "@^Server with GUI"
+    state: present
+  async: 1200
+  poll: 60
+
+- name: Copy TigerVNC service file
+  command: cp /usr/lib/systemd/system/vncserver@.service /etc/systemd/system/vncserver@.service
+
+- name: Configure TigerVNC service file
+  command: sed -i -e 's/<USER>/osebastion/g' /etc/systemd/system/vncserver@.service
+
+- name: Reload systemctl
+  command: systemctl daemon-reload
+
+- name: Create osebastion user
+  user:
+    name: osebastion
+    state: present
+
+- name: Copy set_vncpasswd.sh
+  copy:
+    src: set_vncpasswd.sh
+    dest: /tmp/set_vncpasswd.sh
+    owner: root
+    mode: 0755
+
+- name: Execute set_vncpasswd.sh
+  command: /tmp/set_vncpasswd.sh
+
+- name: Start TigerVNC
+  service:
+    name: vncserver@:2.service
+    state: started
+    enabled: yes

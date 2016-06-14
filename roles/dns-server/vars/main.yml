@@ -1,0 +1,11 @@
+---
+# vars file for bastion
+ec2_region: us-east-1
+os_cluster_id: ose-disconn
+cluster_id: ose-disconn
+ec2_public_az: us-east-1a
+ec2_private_1a_az: us-east-1a
+ec2_private_1e_az: us-east-1e
+ec2_image: ami-2051294a
+ec2_instance_type_bastion: m4.large
+r53_zone: rhtps.io
